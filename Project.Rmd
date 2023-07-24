@@ -1,0 +1,635 @@
+---
+title: "**Colors and K-Means Clustering**"
+author: "Shrayan Roy"
+mainfont: Roboto
+monofont: Consolas
+output: 
+  pdf_document:
+    toc: no
+    number_sections: true
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\begin{abstract}
+This report explores the applications of K-Means Clustering in Image Analysis. K-Means Clustering is a simple method, which tries to find homogeneous subgroups among observations. We will use these idea to find Color Palette of Image, Color Harmonization, Color Compression and many more. `R` and `Rcpp` are used for calibration.\\
+\textbf{Keywords:} Clustering,K-Means ++, Color Palette, Color Space,RGB Space. 
+\end{abstract}
+
+# Introduction:
+
+K-Means Clustering is widely used clustering method in many context. There are other clustering methods such as - Hierarchical Clustering,DBSCAN, Gaussian Mixture Model (GMM) etc. Clustering is an interesting methodology, where our prime interest is to find homogeneous subgroups among observations. Thus, it can be used to answer many real-world questions. Such as -
+
+1.  How can we group customers based on their purchasing behavior, demographics, or preferences?
+
+2.  How can we profile patients based on their medical history and attributes to enable personalized treatment plans?
+
+3.  How can we identify abnormal patterns or outliers in data, such as cybersecurity threats or fraudulent activities?
+
+and so on. Thus, there are many applications of Clustering. Here we will explore a very interesting application of clustering. Our objective would be to find the most dominating colors in a given image. But how can we do that using Clustering ? The answer lies in the output of a Clustering method. After doing Clustering, we have some groups, within which the observations are similar. We will use this idea to find Color Palette of a given image and many more.
+
+# Components Of Image :
+
+Before we start with Color Palette of an Image. Let's try to understand different components of image. It will be required as we proceed.
+
+## Pixel of an Image :
+
+An image pixel, short for "picture element," is the smallest unit of a digital image. It is a fundamental building block that forms the visual representation of an image on a digital display or in digital image processing. Each pixel represents a single point in the image and carries information about the color and brightness at that specific location.
+
+## Color Space :
+
+Color space is a three-dimensional model that represents colors in a structured and systematic manner. It provides a way to describe and quantify colors based on various parameters, facilitating color analysis and manipulation in various applications. Color spaces define how colors are encoded using numeric values, making them essential tools in fields such as computer graphics, image processing, and computer vision.
+
+Some examples of Popular Color Spaces are -
+
+1.  RGB Space (Red, Green, Blue), where colors are represented as combinations of red, green, and blue components.
+
+2.  HSV (Hue, Saturation, Value), which represents colors in terms of hue, saturation, and brightness, making it intuitive for human perception and color selection.
+
+3.  CMYK (Cyan, Magenta, Yellow, Key/Black), used in printing and graphic design, representing colors by the amount of ink used in each channel.
+
+We will mainly use RGB color Space.
+
+## RGB Image Representation :
+
+RGB image can be viewed as three different images(a red scale image, a green scale image and a blue scale image) stacked on top of each other, and when fed into the red, green and blue inputs of a color monitor, it produces a color image on the screen. It is considered the base color space for various applications and this representation is very easy to use.
+
+Each pixel in RGB Space consists of three components. R Value, G Value and B Value. Each component ranges from 0 to 255, indicating the intensity of the respective color. For example, a pixel with (R=255, G=0, B=0) represents pure red, (R=0, G=255, B=0) represents pure green, and (R=0, G=0, B=255) represents pure blue. RGB is an additive color model, where the combination of all three primary colors (red, green, and blue) at their maximum intensity (255) results in white, and the absence of all three colors (R=0, G=0, B=0) represents black.
+
+## Notion of Distance in Color Space :
+
+We will use K-Means Clustering for RGB values. So, we need some distance measures to compare how similar two pixels are w.r.t to RGB values. Fortunately, there exist a notion of distance in color space. Suppose we have two pixels denoted by $Pix_1$ and $Pix_2$. Whose RGB vectors are $(R_1,G_1,B_1)$ and $(R_2,G_2,B_2)$ respectively. Then, distance between $Pix_1$ and $Pix_2$ in RGB space is defined as -
+
+$$D(Pix_1,Pix_2) = \sqrt{(R_1 - R_2)^2 + (G_1 - G_2)^2 + (B_1 - B_2)^2}$$ i.e. the simple euclidean distance between two vectors $(R_1,G_1,B_1)$ and $(R_2,G_2,B_2)$. There are other types of distance metrics as well.
+
+# Handling Image in R :
+
+We will use **R** for our analysis. Particularly the `imager` package will be used for Handling image. This package contains many useful tools to handle Image in R. Such a function is `load.image`. Let's load a image
+
+```{r,warning=FALSE,message=FALSE}
+library(imager)
+
+loadedimage <- load.image("C:/Users/User/Pictures/pp3.jpg")
+loadedimage
+```
+
+So, this Image is of width 480 unit and Height 360 unit. The unit represents 'pixel'. In addition, it has 1 Depth component. Color channels 3 represents the number of colors used to represent the image. Here, it is RGB channel. Most importantly this image consists of $480\times360 = 172800$ pixels. So, 172800 data points ! Which is huge. I would say it has less number of pixels. Some images can have 5000000 pixels. Handling so many data points can be sometimes challenging. Now, we will find out the RGB matrix.
+
+```{r}
+imageData <- as.array(loadedimage[, ,1, 1:3]) #extracted the three dimensional RGB array
+str(imageData)
+```
+
+Here `imageData` is a three dimensional array. `imageData[, , 1]` , `imageData[, , 2]` and `imageData[, , 3]` will return the R,G and B array values respectively. Each such array has dimension $480\times360$. But, Notice that the values are not integer ranging from 0 to 255. Actually `imager` scales the values. i.e. If $p$ denotes the value of a pixel corresponding to a channel. Then, `imager` returns $\frac{p}{255}$. Thus, the pixel values of each channel ranges from 0 to 1. $(1,0,0)$ represents Red, $(0,1,0)$ represents Green and so on.
+
+We can extract the RGB vector corresponding to a pixel position $(i,j)$ by `imageData[i,j,]`.
+
+```{r}
+imageData[2,3,]
+```
+
+Also, We can plot the image using the `loadedimage` object.
+
+```{r,fig.align='center',fig.height= 4,fig.width=6}
+plot(loadedimage,axes = FALSE)
+```
+
+Given an RGB matrix like `imageData`, we can also plot an image.
+
+```{r,eval=FALSE,fig.align='center',fig.height= 4,fig.width=6,warning=FALSE}
+plot(as.cimg(imageData),axes = FALSE)
+```
+
+# K-Means Clustering :
+
+K-means clustering is a simple and elegant approach for partitioning a data set into K distinct, non-overlapping clusters. To perform K-means clustering, we must first specify the desired number of clusters K; then the K-means algorithm will assign each observation to exactly one of the K clusters. The algorithm is very simple. Instead of discussing that, we will discuss an important step of the algorithm. **Initial Choice of Cluster Centers** is the most important step. Depending upon choice of Initial Centers the performance of the method can vary.
+
+The Picture below represents the performance of K-Means with different random choice of Initial Centers. The performance of Clustering varies considerably.
+
+```{r, echo = F,out.width='49%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/kmeans.png")
+```
+
+Thus, it is important to choose the Initial Centers wisely. There exist some methods for that. We will use the **K-Means ++** for our purpose.
+
+## K-Means ++ Algorithm :
+
+The first cluster center is chosen uniformly at random from the data points that are being clustered, after which each subsequent cluster center is chosen from the remaining data points with probability proportional to its squared distance from the point's closest existing cluster center.
+
+| Algorithm For K-Means ++                                                                                                                                      |
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------
+| 1. Choose one center uniformly at random among the data points.                                                                                                
+| 2. For each data point x not chosen yet, compute $D(x)$, the distance between x and the nearest center that has already been chosen.                           
+| 3. Choose one new data point at random as a new center, using a weighted probability distribution where a point $x$ is chosen with probability proportional to $D(x)$                                                                                                                                                           
+| 4. Repeat Steps 2 and 3 until k centers have been chosen.                                                                                                      
+| 5. Now that the initial centers have been chosen, proceed using standard K-Means Clustering.                                                                  |
+
+
+Although the initial selection in the algorithm takes extra time, the k-means part itself converges very quickly after this seeding and thus the algorithm actually lowers the computation time. We have used this algorithm to choose initial cluster center.
+
+# Finding Color Palette Using K-Means Clustering :
+
+The color palette of an image refers to a set of distinct colors that are present in the image. It represents the collection of unique colors used in the image, often excluding very similar or minor variations of colors. The color palette provides a concise summary of the colors that dominate the image and is commonly used in various applications, such as image processing, computer vision, and graphic design.
+
+As discussed, We will use K-Means Clustering to find color-palette of an image. With a choice of $K$, the steps are the following -
+
+| Steps to Find Color Palette using K-Means                                                |
+|------------------------------------------------------------------------------------------
+| 1. Using K-Means ++ find the initial choice of cluster.                                  
+| 2. Using that perform K-Means Clustering and extract the **Cluster Index**               
+| 3. Find the mean of R Value, G Value and B Value corresponding to each **Cluster Index** 
+| 4. Using that Centroid for $K$ different cluster find the corresponding colors.          |
+
+
+Last step can be done efficiently using `rgb()` function in R. This will return you the hex values. Using that color values we can use `barplot` function to draw the color-palette. Now, We will write the Code for the above discussed algorithm from Scratch.
+ 
+## K-Means ++ :
+
+This is the R-Code for K-Means ++ algorithm.
+
+```{r,eval=FALSE}
+
+Kmeanspp <- function(imageData,k){
+  
+  imagedim <- dim(imageData)    #dimension of the array
+  
+  #considering all possible spatial indexes
+  indexcombos <- data.frame(expand.grid(1:imagedim[1],1:imagedim[2]),
+                            R = as.vector(imageData[,,1]),
+                            G = as.vector(imageData[,,2]),
+                            B = as.vector(imageData[,,3])) 
+  
+  clusterCenters <- NULL;clusterCentersIndex <- NULL
+  
+  #initial randomly chosen cluster
+  clusterCentersIndex <- c(clusterCentersIndex,sample(1:nrow(indexcombos),size = 1))
+  initCenter <- indexcombos[clusterCentersIndex[1],-c(1,2)] 
+  clusterCenters <- rbind(clusterCenters,initCenter)  
+  cat("|--->")
+  
+  for(clustnum in 1:(k-1)){
+    distances <- apply(indexcombos[-clusterCentersIndex,],1,FUN = function(coord){
+      min(apply(t(clusterCenters) - coord[-c(1,2)],2,
+                FUN = function(y){sum(y^2)}))
+    })#calculating the minimum distance between the chosen cluster centers and the point
+    
+    chosenindex <- sample(rownames(indexcombos[-clusterCentersIndex,]),size = 1,
+                          prob = distances/sum(distances))
+    clusterCentersIndex <- c(clusterCentersIndex,as.integer(chosenindex))
+    clusterCenters <- rbind(clusterCenters,indexcombos[chosenindex,-c(1,2)])
+    
+    cat("|--->")
+  }
+  
+ return(list(indexcombos = indexcombos,clusterCenters = clusterCenters))
+  
+}
+
+```
+
+The function `kmeanspp` takes `imageData` and `k` as input. `imageData` is basically a 3-Dimensional Array of RGB values corresponding to each pixel. Choice of `k` depends on the colorfulness of the image. The function returns a list consisting of two elements. `indexcombos` is basically a `data.frame` consisting of RGB vector and pixel's spatial coordinate. `clusterCenters` is a `matrix` of $k$ rows. Each row represents the initial cluster centroids selected by K-Means ++.
+
+## Cluster Index :
+
+This is the R code for finding the Cluster Index given Cluster Centroid :
+
+```{r,eval=FALSE}
+FindClusterIndex <- function(clusterCenters,indexcombos){
+  
+  clusterNumbers <- apply(indexcombos,1,FUN = function(coord){
+    
+    distances <- apply(t(clusterCenters) - coord[-c(1,2)],2,
+                       FUN = function(y){sum(y^2)})
+    
+    return(which.min(distances))
+  })
+  
+  return(data.frame(indexcombos,clusterNumbers))
+  
+}
+```
+
+The function `FindClusterIndex` takes `clusterCenters` and `indexcombos` as input. `indexcombos` is as discussed above and `clusterCenters` is choice of Cluster Centroids. It returns a `data.frame` which is a new column named `clusterNumbers` added to the right side of the data frame `indexcombos`.
+
+We will use this function repeatedly for our K-Means Clustering.
+
+## K-Means Clustring :
+
+This is R code for K-Means Clustering for our image data.
+
+```{r,eval=FALSE}
+
+kmeansImage <- function(clusterCenters,indexcombos){
+
+  #Find Initial clusters
+  
+  clusterIndexCombo <- FindClusterIndex(clusterCenters,indexcombos)
+  cat("|--->")
+  
+  adjustment = 1
+  while(adjustment != 0){
+    
+    index1 <- clusterIndexCombo$clusterNumbers
+    
+    newclusterCenters <- aggregate(clusterIndexCombo[,c("R","G","B")],by = 
+                            list(clusterIndexCombo$clusterNumbers),FUN = mean)[,-1]
+    
+    clusterIndexCombo <- FindClusterIndex(newclusterCenters,indexcombos)
+    
+    index2 <- clusterIndexCombo$clusterNumbers
+    
+    if(isTRUE(all.equal(index1,index2))){
+      adjustment = 0
+    }
+    
+    cat("|--->")
+    
+  }
+  
+  return(clusterIndexCombo)
+
+}
+```
+
+The function `kmeansImage` takes `clusterCenters` and `indexcombos` as input. It returns a `data.frame` same as previous function.
+
+## Colour Palette :
+
+This is the R Code to find color palette.
+
+```{r,eval=FALSE}
+
+findPalette <- function(clusterIndexCombo,byprop = TRUE){
+  
+  cols <- floor(aggregate(clusterIndexCombo[,c("R","G","B")],by = 
+                    list(clusterIndexCombo$clusterNumbers),FUN = mean)[,-1]*255)/255
+  
+  colvec <- apply(cols,1,FUN = function(x) {rgb(x[1],x[2],x[3])})
+  
+  colproptrue <- prop.table(table(clusterIndexCombo$clusterNumbers))
+  
+  if(byprop){
+    barplot(matrix(sort(colproptrue,decreasing = TRUE),byrow = T),border = NA,
+            horiz = T,axes = F,col = colvec[order(colproptrue,decreasing = TRUE)])
+  }else{
+    colpropfalse <- rep(1/length(colvec),length(colvec))
+    barplot(matrix(sort(colpropfalse,decreasing = TRUE),byrow = T),border = NA,
+            horiz = T,axes = F,col = colvec[order(colproptrue,decreasing = TRUE)])
+  }
+  
+  return(colvec)
+}
+```
+
+This function takes output of previous function as input and returns a color palette. Look how beautifully it uses the `barplot` function. The reason for pointing out this is that, if we don't use `barplot` function. Then, we need to create a 3 dimensional array such as `imageData` to plot the color palette. By Default the function return a palette, in which the width of each color indicates in what proportion the color is present in the image w.r.t to other $k-1$ colors.
+
+## Examples :
+
+Now, We will use the above functions to find out the color palette of different images.
+
+### Example 1:
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-23 192704.png")
+```
+
+Here, we have used $K= 10$. Clearly, the color palette represents the image very properly.
+
+### Example 2 :
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 152418.png")
+```
+
+Here also we have used $K= 10$ and clearly, the color palette represents the image very properly.
+
+### Example 3 :
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-23 191531.png")
+```
+
+Here also we have used $K= 10$ and clearly, the color palette represents the image very properly.
+
+### Example 4 :
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-23 194335.png")
+```
+
+Here with $K = 3$, the **India Gate** is properly characterized.
+
+### Example 5 :
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 000157.png")
+```
+
+We have used $K = 20$.
+
+### Example 6 (A very Colorful Image):
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 152728.png")
+```
+
+We have used $K = 10$. It is performing well.
+
+
+### Example 7 (Always):
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 182852.png")
+```
+
+We have used $K = 12$. So, We are expecting to perform well *Always*.
+
+Thus, our K-Means clustering to find color-palette of image is working well.
+
+## Computational Issue :
+
+An important drawback of our above functions is that, it takes much time. I am using a gaming laptop with advanced features. But still it is taking around 15-30 Minutes for each image. The computation time depend upon number of pixels of the image. We can use **C ++** for coding. i.e. We will use **R** and **C ++** together for coding. `Rcpp` is our savior. The reason of using C ++ is that, it takes much much less time to run a very large for loop.
+
+## Efficient Coding using Rcpp :
+
+We have written the `kmeansppC`, `FindClusterIndexC`, `kmeansImageC` functions, which are equivalent versions of `kmeanspp`, `FindClusterIndex`, `kmeansImage` with some output modifications. This will reduce computational time a lot. Using this functions, it now taking maximum 2 Minutes for each image. We have provided the link for C++ code in reference section.
+
+# Constructing Same Image with less colors :
+
+We have already find out the color-palette of an image. Now, we will try something new. Our objective will be to construct the given image using the given colors only. In simple language, using the clusters obtained by K-Means Clustering, we will find out the centroid of each cluster. Then, we will replace the RGB vector corresponding to a pixel, by centroid of cluster in which the pixel belongs.
+
+The steps are as follows -
+
+| Steps to Construct Same Image with less colors                            |
+|---------------------------------------------------------------------------
+| 1. Using K-Means Clustering find the cluster indexes and cluster centers. 
+| 2. For Pixel at [1,1], find in which cluster it belongs.                  
+| 3. Replace the Pixel's RGB vector by corresponding cluster centroid.      
+| 4. Repeat Step 2 and 3 for all Pixels of the given Image.                 |
+
+
+We can implement the above method in **R** very simply. We have done this for **Example 3** Above.
+
+```{r,eval= FALSE}
+
+clusterIndexCombo <- kmeansImage(clusterCenters,indexcombos)
+
+clusterIndexCombo1 <- clusterIndexCombo  #A copy of clusterIndexCombo
+
+cols <- floor(aggregate(clusterIndexCombo[,c("R","G","B")],by = 
+            list(clusterIndexCombo$clusterNumbers),FUN = mean)[,-1]*255)/255
+
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 1,c("R","G","B")] = cols[1,] 
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 2,c("R","G","B")] = cols[2,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 3,c("R","G","B")] = cols[3,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 4,c("R","G","B")] = cols[4,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 5,c("R","G","B")] = cols[5,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 6,c("R","G","B")] = cols[6,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 7,c("R","G","B")] = cols[7,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 8,c("R","G","B")] = cols[8,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 9,c("R","G","B")] = cols[9,]
+clusterIndexCombo1[clusterIndexCombo$clusterNumbers == 10,c("R","G","B")] = cols[10,]
+```
+
+Next using the `clusterIndexCombo1`, we will create an 3 Dimensional array of RGB values.
+
+```{r,eval=FALSE}
+newimg <- array(0,dim = dim(imageData))
+newimg[,,1] <- matrix(clusterIndexCombo1$R,byrow = F)
+newimg[,,2] <- matrix(clusterIndexCombo1$G,byrow = F)
+newimg[,,3] <- matrix(clusterIndexCombo1$B,byrow = F)
+```
+
+We have plot the image along with the constructed image.
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 155336.png")
+
+```
+
+Two images are almost same. The original image is just bit darker. It is just of effect of using less colors. Let's see whether this issue gets resolve if we increase $K$. Let's do the same thing with $K = 15$.
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 155336.png")
+
+```
+
+Now, it is hard to distinguish which is original and which is constructed. With $K = 12$ also, we are getting a similar thing.
+
+It is difficult writing the code again and again. Instead we can write a function. It seems like, it is just about for loops. Thus, it is better is use **C ++**. We have written a function in C ++.
+
+```{Rcpp}
+#include <Rcpp.h>
+using namespace Rcpp;
+
+//[[Rcpp::export]]
+NumericMatrix ReplaceMat(NumericMatrix indexcombos,
+                         NumericMatrix colors,NumericVector clusterIndex){
+  
+  for(int i = 0;i < indexcombos.nrow();i++){
+    
+   for(int j = 0;j < colors.nrow();j++){
+     
+     if((j+1) == clusterIndex[i]){
+       for(int k = 0;k < 3;k++){
+         indexcombos(i,k) = colors(j,k);
+       }
+     }
+     
+    } 
+  }
+  return indexcombos;
+}
+```
+
+The function `ReplaceMat` takes `indexcombos`, `colors`, `clusterIndex` as input. `indexcombos` is a `NumericMatrix` with row representing pixels and columns representing RGB vector. `colors` is a `NumericMatrix` whose rows are RGB vectors. $i^{th}$ row of `colors` replaces the RGB vectors corresponding to the pixels, which belong to $i^{th}$ cluster. `clusterIndex` is a `vector` of cluster indices. This function simplifies the task a lot.
+
+The above function is a very general. Using it, we can replace any RGB values of any cluster with any color. The reason of writing such general function will be clear in the next section.
+
+# Color Harmonization Using K-Means Clustering :
+
+Color Harmonization or Color Transfer is a technique, In which we are given two images and using colors of image-1, we reconstruct the image-2. By doing this, we can construct very beautiful to very bad images. Using idea of K-Means Clustering, we can do this very effectively. The idea is as follows.
+
+```{r,echo=FALSE}
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+Suppose, we are given two images. `r colorize("Image-1", "red")` and `r colorize("Image-2", "blue")`.The steps are as follows -
+
+|  Steps to Construct Same Image with less colors                                                                                                               |
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------
+| 1. For fixed value of $k$, Using K-Means Clustering find index combos,cluster centers and cluster index of `r colorize("Image-1", "red")`.
+| 2. Similarly do for `r colorize("Image-2", "blue")`.                
+| 3. Use the function `ReplaceMat` with $1^{st}$ argument as index combos of `r colorize("Image-1", "red")` and $2^{nd}$ argument as a permutation of rows of cluster centers matrix of `r colorize("Image-2", "blue")`. This permutation depends upon the user. The $3^{rd}$ argument will cluster index of `r colorize("Image-1", "red")`. 
+| 4. Using the output construct the new image RGB matrix as shown previously.                                                                                  |
+
+**Step-3** is subjective. It depends upon the user. Some common strategies are - 
+
+* Level-Level Approach : In this approach, we replace the $i^{th}$ dominating color of `r colorize("Image-1", "red")` by $i^{ith}$ dominating color of `r colorize("Image-2", "blue")` $\forall{i}$. It can produce very good to very bad results.
+
+* Closest-Colour : In this approach, we replace the $i^{th}$ color of `r colorize("Image-1", "red")` by the that color of `r colorize("Image-2", "blue")`, which is most closest in the sense of **RGB Distance**. It always produces good results.
+
+**Note:** By the word 'color', we are referring to colors of color-palette of the image.
+
+Now, we will consider some examples.
+
+## Example A:
+
+We will take colors from Example 1 and will transfer to 3 using Level-Level Approach. 
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-22 193632.png")
+
+```
+
+As expected, it is very bad color transfer. Let's try Closet-Color Approach.
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-23 224909.png")
+
+```
+
+This looks really beautiful.
+
+## Example B:
+
+```{r,echo = F,out.width='70%', fig.align='center'}
+
+loadedimage1 <- load.image("C:/Users/User/Pictures/c1.jpg")
+loadedimage2 <- load.image("C:/Users/User/Pictures/c2.jpg")
+par(mfrow = c(1,2))
+
+plot(loadedimage1,axes = FALSE,main = "Image 1")
+plot(loadedimage2,axes =  FALSE,main = "Image 2")
+
+```
+
+We will now take the colors of image-2 and will transfer to image-1.
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-23 221934.png")
+
+```
+
+This also look quite good. But if we increase value of $K$. Then, it will give better performance.
+
+## Example C:
+
+```{r,echo = F,out.width='70%', fig.align='center'}
+
+loadedimage1 <- load.image("C:/Users/User/Pictures/img3.jpg")
+loadedimage2 <- load.image("C:/Users/User/Pictures/img4.jpg")
+par(mfrow = c(1,2))
+
+plot(loadedimage1,axes = FALSE,main = "Image 1")
+plot(loadedimage2,axes =  FALSE,main = "Image 2")
+
+```
+Now, let's see how Image 1 will look at night by color transfer.
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-23 235947n.png")
+
+```
+
+This is giving quite nice result. Although with increase in value of $K$, we are expecting a better result.
+
+# An Interesting Application of K-Means Clustering :
+
+Suppose, you are given an image, from which you want to extract some texts or some drawing or some special colored object. We can use K-Means Clustering. We need to just use the `colors` argument of `ReplaceMat` function wisely. 
+
+## Example - 
+ 
+Consider the following image. 
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+loadedimage <-load.image("C:/Users/User/Pictures/smile.jpeg")
+plot(loadedimage,axes = FALSE)
+
+```
+
+The above image contains mainly three colors. We want to extract the smiley only. We have performed K-Means Clustering with $K = 3$.
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 180229.png")
+
+```
+
+Now, we will replace the near yellow color with near white color. Let's see.
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 180208.png")
+
+```
+
+We have successfully extracted the smiley. Let's replace the background with near yellow color. 
+
+```{r, echo = F,out.width='70%', fig.align='center'}
+
+knitr::include_graphics("C:/Users/User/Pictures/Screenshots/Screenshot 2023-07-24 180148.png")
+
+```
+
+The above looks attractive than our original half-drawn image.
+
+# Conclusion :
+
+From the above discussion, it is clear that K-Means Clustering can be used very effectively to play with colors and images. We can further explore other scopes of K-Means Clustering in Image Processing. Finding Color Palette of an image to Color Transfer, we have used this simple method. It is really interesting.
+
+\newpage
+
+# References :
+
+* [Wikipedia : Color difference] https://en.wikipedia.org/w/index.php?title=Color_difference&oldid=1157581918
+
+* [Wikipedia : Color Space] https://en.wikipedia.org/w/index.php?title=Color_space&oldid=1157129667
+
+* [Wikipedia : Pixel] https://en.wikipedia.org/w/index.php?title=Pixel&oldid=1165335503
+
+* [Used Images] https://www.wikiart.org/
+
+* [R Package : imager] https://cran.r-project.org/web/packages/imager/index.html
+
+* [R Package : Rcpp] https://cran.r-project.org/web/packages/Rcpp/index.html
+
+* [Motivation] : https://github.com/rohitdutta22/kmeans_color_palette
+
+* [Book : ISLR] : https://www.statlearning.com/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
