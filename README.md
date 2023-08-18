@@ -14,7 +14,7 @@ Some Examples :
 
 Here with K = 3, the India Gate is properly characterized.
 
-## B. Color Harmonization using Closet-Color Approach.
+## B. Color Harmonization using Closest-Color Approach.
 
 <img src="images/Screenshot 2023-07-23 224909.png" style="float:right; height:200px;" />
 
